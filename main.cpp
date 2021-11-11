@@ -14,9 +14,11 @@
 #include <mutex>
 #include <array>
 #include <thread>
+#include <set>
 
 namespace fs = std::filesystem;
 
+// Class to hold RGB values
 class RGB {
 public:
     int r = -1;
@@ -24,6 +26,7 @@ public:
     int b = -1;
 };
 
+// Class to hold HSL values
 class HSL {
 public:
     double h = -1;
@@ -31,6 +34,7 @@ public:
     int l = -1;
 };
 
+// Class to hold relative image values
 class Image {
 public:
     std::string fileName;
@@ -38,12 +42,12 @@ public:
     std::vector<RGB> rgb;
     RGB averageRgb;
     HSL hsl;
-
-    int medianHue = -1;
-    double temperature = -1;
 };
 
+// Struct to hold the Image objects at a specified point in the pipeline
 struct pile_t {
+
+    // Remove and return last item
     Image Pop() {
         std::lock_guard<std::mutex> guard(mutex);
         Image work_item;
@@ -56,34 +60,45 @@ struct pile_t {
         return work_item;
     }
 
+    // Put item into vector
     void Put(Image work_item) {
         std::lock_guard<std::mutex> guard(mutex);
         data.push_back(work_item);
     }
 
+    // Return size of vector
     int Num() {
         std::lock_guard<std::mutex> guard(mutex);
         return int(data.size());
     }
 
-    std::vector<Image> GetData() {
+    // Return tge data vector
+    std::vector<Image>& GetData() {
         std::lock_guard<std::mutex> guard(mutex);
         return data;
     }
 
 private:
+    // Mutex to lock to a thread
     std::mutex mutex;
+    // Data vector
     std::vector<Image> data;
 };
 
+// Custom compare lambda
+struct image_cmp {
+    bool operator()(const Image& a, const Image& b) const {
+        return a.hsl.h < b.hsl.h;
+    }
+};
+
 constexpr char* image_folder = "par_images/unsorted";
-std::vector<Image> sortedImages;
+std::set<Image, image_cmp> sortedImages;
 int imageCount;
 
 pile_t to_get_pixels;
 pile_t to_get_average_color;
 pile_t to_convert_rgb_to_hsl;
-//pile_t to_sort;
 pile_t done;
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
@@ -94,6 +109,7 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
     return { scale, scale };
 }
 
+// Load all image filenames and add them to the beginning of the pipeline
 void LoadImages()
 {    
     for (auto& p : fs::directory_iterator(image_folder))
@@ -106,6 +122,7 @@ void LoadImages()
     }
 }
 
+// Load image based on object, gather all pixels RGB values storing them in RGB object and add it to the object.
 void GetPixels(Image &img) {
     sf::Texture texture;
     if (!texture.loadFromFile(img.fileName))
@@ -127,14 +144,15 @@ void GetPixels(Image &img) {
     }
 }
 
-bool SortByHue(Image& img1, Image& img2) {
-    return img1.hsl.h < img2.hsl.h;
-}
 
-void SortList(std::vector<Image> img) {
-    std::sort(img.begin(), img.end(), SortByHue);
-}
 
+// Sort passed list with custom compare function SortByHue()
+//void SortList() {
+//    auto img = done.GetData();
+//    std::sort(img.begin(), img.end(), SortByHue);
+//}
+
+// Get the Average RGB value from a list of RGBs
 void AverageRgbColour(Image &img) {
     int r = 0, g = 0, b = 0;
     for (RGB c : img.rgb) {
@@ -151,6 +169,7 @@ void AverageRgbColour(Image &img) {
     img.averageRgb = average;
 }
 
+// Convert RGB to HSL
 void RgbToHsl(Image &img) {
     HSL hsl;
 
@@ -191,8 +210,10 @@ void RgbToHsl(Image &img) {
     img.hsl = hsl;
 }
 
+// Driver function for GetPixels(), constantly running on seperate thread
+// Get image from start of pipeline, get it's pixels then add it to the next section of the pipeline
 void GetPixelsDriver() {
-    while (done.Num() != imageCount && to_get_pixels.Num() != 0) {
+    while (sortedImages.size() != imageCount && to_get_pixels.Num() != 0) {
         Image img = to_get_pixels.Pop();
         //std::cout << "Calculating image pixels: " << img.fileName << std::endl;
         GetPixels(img);
@@ -200,8 +221,10 @@ void GetPixelsDriver() {
     }
 }
 
+// Driver function for AverageColour(), constantly running on seperate thread
+// Get image from respective part of pipeline, get it's average colour then add it to the next section of the pipeline
 void AverageColourDriver() {
-    while (done.Num() < imageCount) {
+    while (sortedImages.size() < imageCount) {
         if (to_get_average_color.Num() > 0) {
             Image img = to_get_average_color.Pop();
             //std::cout << "Calculating image average colour: " << img.fileName << std::endl;
@@ -211,8 +234,10 @@ void AverageColourDriver() {
     }
 }
 
+// Driver function for RgbToHsl(), constantly running on seperate thread
+// Get image from respective part of pipeline, convert its colour values from RGB to HSL then add it to the next section of the pipeline
 void RgbToHslDriver() {
-    while (done.Num() != imageCount) {
+    while (sortedImages.size() != imageCount) {
         if (to_convert_rgb_to_hsl.Num() > 0) {
             Image img = to_convert_rgb_to_hsl.Pop();
             //std::cout << "converting image pixels to hsl: " << img.fileName << std::endl;
@@ -222,31 +247,41 @@ void RgbToHslDriver() {
     }
 }
 
+// Driver function for SortList(), constantly running on seperate thread
+// Get image vector from respective part of pipeline, sort it then add it to the next section of the pipeline
 void SortDriver() {
-    while (done.Num() != imageCount) {
-        if (done.Num() > 0) {
-            SortList(done.GetData());
+    bool loop = true;
+        while (loop) {
+            if (done.Num() > 0) {
+                auto img = done.Pop();
+                sortedImages.insert(img);
+            }
+
+            if (sortedImages.size() == imageCount)
+                loop = false;
         }
-    }
 }
 
+// For Debugging, Print values and filename
+// Can run multithread or single thread
 void PrintWhenComplete() {
-    bool loop = true;
-    while (loop) {
-        //if (done.Num() > 0)
-        //    std::cout << "go" << std::endl;
+    bool loop = true;    
 
-        if (done.Num() == imageCount) {
-            //std::cout << "Please hold: " << std::endl;
-            //std::this_thread::sleep_for(std::chrono::seconds(2));
-            for (auto img : done.GetData()) {
+    while (loop) {
+        if (sortedImages.size() == imageCount) {
+            std::vector<Image> Images;
+            std::copy(sortedImages.begin(), sortedImages.end(), std::back_inserter(Images));
+
+            std::cout << std::endl;
+
+            for (auto img : Images) {
                 std::cout << img.fileName << "\t | \t" << img.hsl.h << std::endl;
             }
 
             loop = false; 
         }
     }
-}
+} 
 
 int main()
 {
@@ -268,19 +303,24 @@ int main()
                             sf::Style::Titlebar | sf::Style::Close);
     window.setVerticalSyncEnabled(true);      
 
+    // Create SFML objects to display the images
     sf::Texture texture;
     sf::Sprite sprite;
-
+    
+    // This is used to also output values when complete
     std::array<std::thread, 5> threads = { std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver), std::thread(PrintWhenComplete) };
 
+    // This is used when you don't want to output values for performance measurement
+    //std::array<std::thread, 4> threads = { std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver) };
     
-
+    // If there is no texture and a image that has been completely processed
+    // loop until one has been processed then set the image
     while (true) {
-        if (sprite.getTexture() == nullptr && done.Num() > 0)
+        if (sprite.getTexture() == nullptr && sortedImages.size() > 0)
         {
-            auto vec = done.GetData();
-
-            if (texture.loadFromFile(vec[0].fileName))
+            std::vector<Image> Images;
+            std::copy(sortedImages.begin(), sortedImages.end(), std::back_inserter(Images));
+            if (texture.loadFromFile(Images[0].fileName))
             {
                 sprite = sf::Sprite(texture);
                 sprite.setScale(ScaleFromDimensions(texture.getSize(), gameWidth, gameHeight));
@@ -293,7 +333,7 @@ int main()
     sf::Clock clock;
     while (window.isOpen())
     {
-        auto vec = done.GetData();
+        std::vector<Image> Images;
 
         // Handle events
         sf::Event event;
@@ -318,20 +358,18 @@ int main()
 
             // Arrow key handling!
             if (event.type == sf::Event::KeyPressed)
-            {                           
-                
-
+            {                          
                 // adjust the image index
                 if (event.key.code == sf::Keyboard::Key::Left)
-                    imageIndex = (imageIndex + vec.size() - 1) % vec.size();
+                    imageIndex = (imageIndex + sortedImages.size() - 1) % sortedImages.size();
                 else if (event.key.code == sf::Keyboard::Key::Right)
-                    imageIndex = (imageIndex + 1) % vec.size();
+                    imageIndex = (imageIndex + 1) % sortedImages.size();
                 // get image filename
-
-                std::cout << done.Num() << std::endl;
-                if (done.Num() > 0)
+                std::copy(sortedImages.begin(), sortedImages.end(), std::back_inserter(Images));
+                std::cout << sortedImages.size() << std::endl;
+                if (Images.size() > 0)
                 {
-                    auto& imageFilename = vec[imageIndex].fileName;
+                    auto& imageFilename = Images[imageIndex].fileName;
                     // set it as the window title
                     window.setTitle(imageFilename);
                     // ... and load the appropriate texture, and put it in the sprite
