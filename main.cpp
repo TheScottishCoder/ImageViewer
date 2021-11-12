@@ -288,9 +288,6 @@ int main()
     std::srand(static_cast<unsigned int>(std::time(NULL)));
     std::cout << fs::current_path();
 
-    // load all filenames
-    LoadImages();
-
     // Define some constants
     const float pi = 3.14159f;
     const int gameWidth = 800;
@@ -308,7 +305,7 @@ int main()
     sf::Sprite sprite;
     
     // This is used to also output values when complete
-    std::array<std::thread, 5> threads = { std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver), std::thread(PrintWhenComplete) };
+    std::array<std::thread, 6> threads = { std::thread(LoadImages), std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver), std::thread(PrintWhenComplete) };
 
     // This is used when you don't want to output values for performance measurement
     //std::array<std::thread, 4> threads = { std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver) };
@@ -366,7 +363,6 @@ int main()
                     imageIndex = (imageIndex + 1) % sortedImages.size();
                 // get image filename
                 std::copy(sortedImages.begin(), sortedImages.end(), std::back_inserter(Images));
-                std::cout << sortedImages.size() << std::endl;
                 if (Images.size() > 0)
                 {
                     auto& imageFilename = Images[imageIndex].fileName;
