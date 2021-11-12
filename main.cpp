@@ -182,8 +182,6 @@ void RgbToHsl(Image &img) {
 
     double delta = max - min;
 
-    hsl.l = (max + min) / 2.f;
-
     if (max == min) {
         hsl.h = 0.f;
     }
@@ -286,7 +284,7 @@ void PrintWhenComplete() {
 int main()
 {
     std::srand(static_cast<unsigned int>(std::time(NULL)));
-    std::cout << fs::current_path();
+    //std::cout << fs::current_path();
 
     // Define some constants
     const float pi = 3.14159f;
@@ -305,10 +303,10 @@ int main()
     sf::Sprite sprite;
     
     // This is used to also output values when complete
-    std::array<std::thread, 6> threads = { std::thread(LoadImages), std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver), std::thread(PrintWhenComplete) };
+    //std::array<std::thread, 6> threads = { std::thread(LoadImages), std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver), std::thread(PrintWhenComplete) };
 
     // This is used when you don't want to output values for performance measurement
-    //std::array<std::thread, 4> threads = { std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver) };
+    std::array<std::thread, 5> threads = { std::thread(LoadImages), std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver) };
     
     // If there is no texture and a image that has been completely processed
     // loop until one has been processed then set the image
