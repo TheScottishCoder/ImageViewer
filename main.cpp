@@ -15,6 +15,7 @@
 #include <array>
 #include <thread>
 #include <set>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -111,7 +112,7 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
 
 // Load all image filenames and add them to the beginning of the pipeline
 void LoadImages()
-{    
+{   
     imageCount = 0;
     for (auto& p : fs::directory_iterator(image_folder))
     {
@@ -146,14 +147,6 @@ void GetPixels(Image &img) {
         }
     }
 }
-
-
-
-// Sort passed list with custom compare function SortByHue()
-//void SortList() {
-//    auto img = done.GetData();
-//    std::sort(img.begin(), img.end(), SortByHue);
-//}
 
 // Get the Average RGB value from a list of RGBs
 void AverageRgbColour(Image &img) {
@@ -213,6 +206,7 @@ void RgbToHsl(Image &img) {
 
 // Driver function for GetPixels(), constantly running on seperate thread
 // Get image from start of pipeline, get it's pixels then add it to the next section of the pipeline
+
 void GetPixelsDriver() {
     bool loop = true;
 
@@ -279,7 +273,7 @@ void SortDriver() {
             if (done.Num() > 0) {
                 auto img = done.Pop();
                 sortedImages.insert(img);
-                std::cout << "First item sorted" << std::endl;
+                //std::cout << "First item sorted" << std::endl;
             }
 
             if (sortedImages.size() == imageCount && imageCount > 0)
@@ -337,6 +331,7 @@ int main()
 
     for (auto& t : threads)
         t.detach();
+
     
     // If there is no texture and a image that has been completely processed
     // loop until one has been processed then set the image
