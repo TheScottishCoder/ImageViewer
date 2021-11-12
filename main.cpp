@@ -94,7 +94,7 @@ struct image_cmp {
 
 constexpr char* image_folder = "par_images/unsorted";
 std::set<Image, image_cmp> sortedImages;
-int imageCount;
+int imageCount = 999999;
 
 pile_t to_get_pixels;
 pile_t to_get_average_color;
@@ -112,6 +112,7 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
 // Load all image filenames and add them to the beginning of the pipeline
 void LoadImages()
 {    
+    imageCount = 0;
     for (auto& p : fs::directory_iterator(image_folder))
     {
         Image img;
@@ -125,8 +126,10 @@ void LoadImages()
 // Load image based on object, gather all pixels RGB values storing them in RGB object and add it to the object.
 void GetPixels(Image &img) {
     sf::Texture texture;
-    if (!texture.loadFromFile(img.fileName))
+    if (!texture.loadFromFile(img.fileName)) {
+        std::cout << "Failed" << std::endl;
         return;
+    }
     sf::Sprite sprite(texture);
 
     auto image = sprite.getTexture()->copyToImage();
@@ -211,23 +214,39 @@ void RgbToHsl(Image &img) {
 // Driver function for GetPixels(), constantly running on seperate thread
 // Get image from start of pipeline, get it's pixels then add it to the next section of the pipeline
 void GetPixelsDriver() {
-    while (sortedImages.size() != imageCount && to_get_pixels.Num() != 0) {
-        Image img = to_get_pixels.Pop();
-        //std::cout << "Calculating image pixels: " << img.fileName << std::endl;
-        GetPixels(img);
-        to_get_average_color.Put(img);
+    bool loop = true;
+
+    while (loop) {
+        if (to_get_pixels.Num() > 0) {
+            Image img = to_get_pixels.Pop();
+            //std::cout << "Calculating image pixels: " << img.fileName << std::endl;
+            GetPixels(img);
+            to_get_average_color.Put(img);
+        }
+
+        // This prevents this loop ending before imageCount is initially updated.
+        if (sortedImages.size() == imageCount && imageCount > 0) {
+            loop = false;
+        }
     }
 }
 
 // Driver function for AverageColour(), constantly running on seperate thread
 // Get image from respective part of pipeline, get it's average colour then add it to the next section of the pipeline
 void AverageColourDriver() {
-    while (sortedImages.size() < imageCount) {
+    bool loop = true;
+
+    while (loop) {
         if (to_get_average_color.Num() > 0) {
             Image img = to_get_average_color.Pop();
             //std::cout << "Calculating image average colour: " << img.fileName << std::endl;
             AverageRgbColour(img);
             to_convert_rgb_to_hsl.Put(img);
+        }
+
+        // This prevents this loop ending before imageCount is initially updated.
+        if (sortedImages.size() == imageCount && imageCount > 0) {
+            loop = false;
         }
     }
 }
@@ -235,12 +254,19 @@ void AverageColourDriver() {
 // Driver function for RgbToHsl(), constantly running on seperate thread
 // Get image from respective part of pipeline, convert its colour values from RGB to HSL then add it to the next section of the pipeline
 void RgbToHslDriver() {
-    while (sortedImages.size() != imageCount) {
+    bool loop = true;
+
+    while (loop) {
         if (to_convert_rgb_to_hsl.Num() > 0) {
             Image img = to_convert_rgb_to_hsl.Pop();
             //std::cout << "converting image pixels to hsl: " << img.fileName << std::endl;
             RgbToHsl(img);
             done.Put(img);
+        }
+
+        // This prevents this loop ending before imageCount is initially updated.
+        if (sortedImages.size() == imageCount && imageCount > 0) {
+            loop = false;
         }
     }
 }
@@ -253,9 +279,10 @@ void SortDriver() {
             if (done.Num() > 0) {
                 auto img = done.Pop();
                 sortedImages.insert(img);
+                std::cout << "First item sorted" << std::endl;
             }
 
-            if (sortedImages.size() == imageCount)
+            if (sortedImages.size() == imageCount && imageCount > 0)
                 loop = false;
         }
 }
@@ -303,10 +330,13 @@ int main()
     sf::Sprite sprite;
     
     // This is used to also output values when complete
-    //std::array<std::thread, 6> threads = { std::thread(LoadImages), std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver), std::thread(PrintWhenComplete) };
+    // std::array<std::thread, 6> threads = { std::thread(LoadImages), std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver), std::thread(PrintWhenComplete) };
 
     // This is used when you don't want to output values for performance measurement
-    std::array<std::thread, 5> threads = { std::thread(LoadImages), std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver) };
+    std::array<std::thread, 5> threads = { std::thread(LoadImages),  std::thread(GetPixelsDriver), std::thread(AverageColourDriver), std::thread(RgbToHslDriver), std::thread(SortDriver) };
+
+    for (auto& t : threads)
+        t.detach();
     
     // If there is no texture and a image that has been completely processed
     // loop until one has been processed then set the image
